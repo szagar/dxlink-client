@@ -70,6 +70,14 @@ class TastytradeTokenProvider:
         self._access_expiry = time.monotonic() + float(body.get("expires_in", 900))
         return self._access_token
 
+    async def access_token(self) -> str:
+        """The current OAuth access token (cached + refreshed on demand).
+
+        For callers that need to make authenticated TastyTrade REST calls
+        (e.g. fetching option chains) alongside the DXLink quote token.
+        """
+        return await self._access()
+
     async def quote_token(self) -> QuoteToken:
         access = await self._access()
         client = await self._http()
