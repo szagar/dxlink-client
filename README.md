@@ -35,9 +35,36 @@ async with DXLinkConnection(SettingsTokenProvider()) as conn:
 | `DXLINK_KEEPALIVE_INTERVAL_S` | KEEPALIVE cadence (server timeout 60s) | `30` |
 
 Credentials are **never** hard-coded — copy `.env.example` to `.env` (gitignored)
-and fill in. For the live TastyTrade feed, set `DXLINK_URL`/`DXLINK_TOKEN` from a
-`GET /api-quote-tokens` response (mint that token wherever your broker client
-lives and inject it; the core package does not log in).
+and fill in.
+
+### Live TastyTrade feed (OAuth2)
+
+Your TastyTrade `client_id` / `client_secret` / `refresh_token` are **not** the
+DXLink token — they mint it via a two-step exchange. Put them in `.env` and use
+the bundled provider (leave `DXLINK_URL`/`DXLINK_TOKEN` blank):
+
+```
+TASTYTRADE_CLIENT_ID=...
+TASTYTRADE_CLIENT_SECRET=...
+TASTYTRADE_REFRESH_TOKEN=...
+```
+
+```python
+# needs the extra:  uv sync --extra tastytrade   (dxlink-client[tastytrade])
+from dxlink_client import DXLinkConnection
+from dxlink_client.providers.tastytrade import TastytradeTokenProvider
+
+provider = TastytradeTokenProvider()                 # reads TASTYTRADE_* from .env
+async with DXLinkConnection(provider) as conn:       # mints the token at connect
+    await conn.subscribe("Quote", ["AAPL"])
+    print(await conn.next_event(timeout=2))
+```
+
+The exchange: `client_id + client_secret + refresh_token` → `POST /oauth/token`
+→ `access_token` (~15 min, auto-refreshed) → `GET /api-quote-tokens` →
+`{ token, dxlink-url }` → injected into the connection. The `refresh_token` never
+expires. The **core** package never logs in — this provider lives behind the
+`[tastytrade]` extra (httpx).
 
 ## Robustness
 

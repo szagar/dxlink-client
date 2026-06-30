@@ -33,3 +33,22 @@ class DXLinkSettings(BaseSettings):
 
     connect_timeout_s: float = 10.0
     """Handshake deadline (connect → first FEED_CONFIG)."""
+
+
+class TastytradeSettings(BaseSettings):
+    """OAuth2 credentials for `TastytradeTokenProvider` (env prefix TASTYTRADE_).
+
+    These mint the DXLink token at runtime; the core client never reads them.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="TASTYTRADE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    client_id: str | None = None
+    client_secret: str | None = None
+    refresh_token: str | None = None
+    api_base: str = "https://api.tastytrade.com"
