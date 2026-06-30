@@ -66,5 +66,9 @@ async def test_access_token_is_cached_across_calls() -> None:
 
 
 def test_missing_credentials_raise() -> None:
+    # Explicit None overrides any .env values (init args win over the env file).
+    empty = TastytradeSettings(
+        client_id=None, client_secret=None, refresh_token=None, api_base=API
+    )
     with pytest.raises(ValueError, match="TASTYTRADE_CLIENT_ID"):
-        TastytradeTokenProvider(TastytradeSettings(api_base=API))
+        TastytradeTokenProvider(empty)

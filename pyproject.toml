@@ -50,4 +50,5 @@ dev = [
 asyncio_mode = "auto"
 markers = [
     "network: hits the live dxfeed demo server (requires outbound WS).",
+    "tastytrade: hits the live TastyTrade feed (requires TASTYTRADE_* creds in .env).",
 ]

@@ -29,6 +29,20 @@ def test_chunks_multiple_events_in_one_block() -> None:
     assert [(e.price, e.size) for e in events] == [(285.91, 40.0), (285.92, 5.0)]
 
 
+def test_parses_greeks_delta_in_declared_order() -> None:
+    # delta is the BrokerSource-critical field — pin its positional extraction.
+    p = EventParser()
+    p.update_config(
+        {"Greeks": ["eventType", "eventSymbol", "price", "volatility", "delta",
+                    "gamma", "theta", "rho", "vega"]}
+    )
+    (g,) = p.parse_feed_data(
+        ["Greeks", ["Greeks", ".SPY", 1.23, 0.15, 0.42, 0.01, -0.05, 0.2, 0.3]]
+    )
+    assert isinstance(g, GreeksEvent)
+    assert g.event_symbol == ".SPY" and g.delta == 0.42 and g.volatility == 0.15
+
+
 def test_nan_and_null_greeks_coerce_to_none() -> None:
     p = EventParser()
     p.update_config({"Greeks": ["eventType", "eventSymbol", "delta", "gamma"]})
