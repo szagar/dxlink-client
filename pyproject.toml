@@ -1,0 +1,46 @@
+[project]
+name = "dxlink-client"
+version = "0.1.0"
+description = "A robust async dxLink (dxfeed) WebSocket market-data client — broker-agnostic, token injected."
+readme = "README.md"
+authors = [
+    { name = "Stephen Zagar", email = "szagar@gmail.com" }
+]
+requires-python = ">=3.12"
+license = "MIT"
+keywords = ["dxlink", "dxfeed", "websocket", "market-data", "tastytrade", "options", "greeks"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+dependencies = [
+    "websockets>=13.0",
+    "pydantic>=2.13.4",
+    # Loads configuration (endpoint URL, quote token, credentials) from .env.
+    "pydantic-settings>=2.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/szagar/dxlink-client"
+Repository = "https://github.com/szagar/dxlink-client"
+Issues = "https://github.com/szagar/dxlink-client/issues"
+
+[build-system]
+requires = ["uv_build>=0.8.3,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.0",
+    "ruff>=0.15.20",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "network: hits the live dxfeed demo server (requires outbound WS).",
+]
