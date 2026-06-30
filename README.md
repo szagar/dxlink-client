@@ -80,6 +80,23 @@ grounded in live protocol testing:
 - **F4** — act on `ERROR` frames. ◻ partial (surfaced as a queue sentinel)
 - **F5** — token refresh / reconnect. ◻ TODO
 
+## Latency
+
+Measured live against TastyTrade with `examples/benchmark_latency.py` (numbers
+are machine/location dependent — re-run on your production host):
+
+| | latency |
+|---|---|
+| Cold start (OAuth + quote-token + WS handshake) | ~450–490 ms (one-time) |
+| Chain data (REST nested chain) | ~105–155 ms |
+| Price / greek, **warm** connection (subscribe → first event) | ~10–35 ms |
+
+So a delta-selected resolution is ~150 ms (chain) + ~35 ms (greek) ≈ **~200 ms
+warm**; cold adds the ~490 ms token+handshake — which is why repeated resolution
+should keep the connection warm. First-event latency is the subscribe snapshot;
+ongoing updates batch at the 100 ms `aggregationPeriod`. Indices stream the
+underlying as `Trade` (no bid/ask); stocks/futures as `Quote`.
+
 ## Tests
 
 ```bash
