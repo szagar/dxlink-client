@@ -15,6 +15,12 @@ Design / robustness rationale: docs/plans/dxlink-robust-approach.md (contract-re
 
 from dxlink_client.config import DEMO_URL, DXLinkSettings
 from dxlink_client.connection import DXLinkConnection
+from dxlink_client.errors import (
+    FATAL_ERROR_TYPES,
+    RETRYABLE_ERROR_TYPES,
+    DXLinkAuthError,
+    is_retryable_error_type,
+)
 from dxlink_client.models import (
     ErrorEvent,
     GreeksEvent,
@@ -23,6 +29,7 @@ from dxlink_client.models import (
     TradeEvent,
 )
 from dxlink_client.parser import EventParser
+from dxlink_client.retry import connect_with_backoff
 from dxlink_client.tokens import (
     AnonymousTokenProvider,
     SettingsTokenProvider,
@@ -33,9 +40,14 @@ __version__ = "0.1.0"
 
 __all__ = [
     "DEMO_URL",
+    "DXLinkAuthError",
     "DXLinkConnection",
     "DXLinkSettings",
     "ErrorEvent",
+    "FATAL_ERROR_TYPES",
+    "RETRYABLE_ERROR_TYPES",
+    "connect_with_backoff",
+    "is_retryable_error_type",
     "EventParser",
     "GreeksEvent",
     "QuoteEvent",

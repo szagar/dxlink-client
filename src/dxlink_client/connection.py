@@ -9,8 +9,14 @@ in the contract-resolver repo):
 * F6 — `ping_interval=None`; send app-level KEEPALIVE on a timer.
 
 Not yet implemented here (tracked in the spec): the per-subscription staleness
-watchdog (F3) and reconnect/token-refresh (F5). They layer on top of this loop;
-the connection exposes the hooks they need (`last_feed_at`, `subscribe(force=)`).
+watchdog (F3) and mid-session reconnect/token-refresh (F5). They layer on top
+of this loop; the connection exposes the hooks they need (`last_feed_at`,
+`subscribe(force=)`). Connect-time hardening IS implemented: a pre-ready ERROR
+frame fails `connect()` fast with a typed `DXLinkAuthError` (classified
+retryable vs fatal), and `connect_with_retry()` / `dxlink_client.retry.
+connect_with_backoff` provide bounded exponential backoff for the transient
+burst re-auth rejections documented in zts-massive
+docs/plans/mds-dxlink-reconnect-hardening.md.
 """
 
 from __future__ import annotations
@@ -21,8 +27,10 @@ import time
 
 import websockets
 
+from dxlink_client.errors import DXLinkAuthError
 from dxlink_client.models import ErrorEvent, Event, GreeksEvent, QuoteToken
 from dxlink_client.parser import EventParser
+from dxlink_client.retry import connect_with_backoff
 from dxlink_client.tokens import AnonymousTokenProvider, TokenProvider
 
 _FEED_CHANNEL = 1
@@ -54,6 +62,11 @@ class DXLinkConnection:
         self._parser = EventParser()
         self._events: asyncio.Queue[Event | ErrorEvent] = asyncio.Queue()
         self._ready = asyncio.Event()
+        # A pre-ready ERROR frame (AUTH rejection, protocol mismatch) fails the
+        # in-flight connect() fast with a typed DXLinkAuthError instead of
+        # letting it wait out the connect timeout.
+        self._handshake_failed = asyncio.Event()
+        self._handshake_error: DXLinkAuthError | None = None
         self._authorized = asyncio.Event()
         self._channel_open = asyncio.Event()
         self._run_task: asyncio.Task[None] | None = None
@@ -84,12 +97,53 @@ class DXLinkConnection:
         self._run_task = asyncio.create_task(self._run())
         await self._send({"type": "SETUP", "channel": 0, "version": "0.1-py/0.1.0",
                           "keepaliveTimeout": 60, "acceptKeepaliveTimeout": 60})
+        ready = asyncio.create_task(self._ready.wait())
+        failed = asyncio.create_task(self._handshake_failed.wait())
         try:
-            await asyncio.wait_for(self._ready.wait(), timeout=self._connect_timeout_s)
-        except asyncio.TimeoutError as e:
+            done, _ = await asyncio.wait(
+                {ready, failed},
+                timeout=self._connect_timeout_s,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for t in (ready, failed):
+                t.cancel()
+        if failed in done and self._handshake_error is not None:
+            err = self._handshake_error
+            await self.close()  # abandon cleanly — a half-open session blocks re-AUTH
+            raise err
+        if ready not in done:
             await self.close()
-            raise ConnectionError("DXLink handshake did not complete in time") from e
+            raise ConnectionError("DXLink handshake did not complete in time")
         self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+
+    async def connect_with_retry(
+        self,
+        *,
+        attempts: int = 8,
+        initial_delay_s: float = 1.0,
+        max_delay_s: float = 60.0,
+    ) -> None:
+        """`connect()` with bounded exponential backoff on transient errors.
+
+        Each attempt starts clean — any half-open socket from the prior
+        attempt is closed first (a crashed connection left half-open
+        server-side is what makes tight retry loops self-perpetuate) and the
+        provider re-mints the token. A fatal ``DXLinkAuthError``
+        (``UNSUPPORTED_PROTOCOL``) is not retried; exhaustion re-raises the
+        last error.
+        """
+
+        async def _attempt() -> None:
+            await self.close()
+            await self.connect()
+
+        await connect_with_backoff(
+            _attempt,
+            attempts=attempts,
+            initial_delay_s=initial_delay_s,
+            max_delay_s=max_delay_s,
+        )
 
     async def close(self) -> None:
         for task in (self._keepalive_task, self._run_task):
@@ -107,6 +161,8 @@ class DXLinkConnection:
                 pass
             self._ws = None
         self._ready.clear()
+        self._handshake_failed.clear()
+        self._handshake_error = None
         self._authorized.clear()
         self._channel_open.clear()
 
@@ -202,6 +258,16 @@ class DXLinkConnection:
                 self._parser.update_config(ef)  # F1 — authoritative field order
             self._ready.set()
         elif mtype == "ERROR":
+            if not self._ready.is_set():
+                # Pre-ready ERROR = failed handshake (e.g. a transient AUTH
+                # rejection under burst re-auth). Classify it (spec types:
+                # UNSUPPORTED_PROTOCOL | TIMEOUT | UNAUTHORIZED |
+                # INVALID_MESSAGE | BAD_ACTION | UNKNOWN) and fail connect()
+                # fast with the typed error.
+                self._handshake_error = DXLinkAuthError(
+                    str(msg.get("error", "UNKNOWN")), str(msg.get("message", ""))
+                )
+                self._handshake_failed.set()
             # F4 (partial): surface as a sentinel so callers/watchdog can react.
             self._events.put_nowait(ErrorEvent(str(msg.get("error", "unknown"))))
 
